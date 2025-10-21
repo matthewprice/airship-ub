@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ulta Beauty & Airship Technical Architecture Portal</title>
+    <!-- Load Tailwind CSS --><script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
+    <style>
+        /* Custom Tailwind Configuration for the Light/Airship Blue Theme */
+        :root {
+            --color-primary: #3b82f6; /* Blue 500 / Airship Blue Accent */
+            --color-background: #ffffff; /* White background */
+            --color-surface: #f3f4f6; /* Gray 100 for sidebar/card backgrounds */
+            --color-code: #f9fafb; /* Gray 50 for code blocks */
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--color-background);
+            color: #1f2937; /* Dark gray text */
+        }
+        .section-link {
+            color: #4b5563; /* Gray 600 default link color */
+        }
+        .section-link:hover {
+            color: #3b82f6; /* Blue 500 text on hover */
+            background-color: #f3f4f6; /* Gray 100 for hover background */
+            border-radius: 0.375rem;
+        }
+        .active-link {
+            color: #ffffff;
+            background-color: #3b82f6; /* Blue 500 */
+            /* Custom blue shadow for lift effect */
+            box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.2), 0 2px 4px -1px rgba(59, 130, 246, 0.1); 
+            border-radius: 0.375rem;
+            font-weight: 600; /* Semi-bold for active link */
+        }
+        .code-block {
+            background-color: var(--color-code);
+            border: 1px solid #e5e7eb; /* Light gray border */
+        }
+        /* Overriding prose styles for the light theme */
+        .prose :where(h3):not(:where([class~="not-prose"] *)) {
+            color: #3b82f6; /* Blue 600 for subheadings */
+        }
+        .prose :where(a):not(:where([class~="not-prose"] *)) {
+            color: #3b82f6; /* Blue for inline links */
+        }
+        .prose {
+            color: #374151; /* Default body text color */
+        }
+        .text-green-400 { /* Make code text dark for visibility */
+            color: #1f2937; 
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <!-- LOGIN OVERLAY: Full-screen protector, removed on successful auth -->
+    <div id="login-overlay" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-95 p-4">
+        <div class="w-full max-w-md p-8 bg-white rounded-xl shadow-2xl">
+            <h2 class="text-3xl font-bold text-gray-900 mb-6 text-center">
+                Access Required
+            </h2>
+            <div class="flex justify-center mb-6">
+                <img src="https://docs.airship.com/images/airship-logo.svg" alt="Airship Logo" class="h-8 mr-2">
+                <span class="text-2xl font-semibold text-gray-800">+ Ulta Beauty</span>
+            </div>
+            
+            <form id="login-form" class="space-y-4">
+                <div>
+                    <label for="username" class="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                    <input type="text" id="username" name="username" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-150">
+                </div>
+                <div>
+                    <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                    <input type="password" id="password" name="password" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-150">
+                </div>
+                
+                <p id="login-error" class="hidden text-sm font-medium text-red-600 pt-2 text-center"></p>
+                
+                <button type="submit" class="w-full py-3 mt-4 text-white font-semibold bg-blue-600 hover:bg-blue-700 rounded-lg shadow-md transition duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                    Authenticate
+                </button>
+            </form>
+            <p class="text-xs text-gray-500 mt-6 text-center">Technical documentation is restricted access.</p>
+        </div>
+    </div>
+
+    <!-- Main Application Container (Hidden by default, shown on successful login) -->
+    <div id="main-content" class="hidden flex flex-col lg:flex-row h-screen overflow-hidden">
+
+        <!-- Sidebar Navigation --><nav id="sidebar" class="w-full lg:w-72 bg-gray-100 border-r border-gray-300 p-4 overflow-y-auto flex-shrink-0">
+            <!-- Airship Logo --><div class="mb-4">
+                <img src="https://docs.airship.com/images/airship-logo.svg" alt="Airship Logo" class="h-8">
+            </div>
+            <h1 class="text-3xl font-extrabold text-gray-900 mb-6 p-2 border-b border-blue-500/50">
+                Ulta Beauty + Airship Architecture Docs
+            </h1>
+            
+            <div id="nav-list" class="space-y-1">
+                <!-- Navigation links will be populated by JS --></div>
+        </nav>
+
+        <!-- Main Content Area --><main id="content-container" class="flex-grow p-6 lg:p-10 overflow-y-auto bg-white">
+            
+            <header class="mb-8 border-b border-blue-500/50 pb-4">
+                <h2 id="section-title" class="text-4xl font-bold text-gray-900"></h2>
+                <p id="section-subtitle" class="text-gray-600 mt-2 text-lg"></p>
+            </header>
+
+            <section id="content" class="prose max-w-none space-y-6">
+                <!-- Content will be injected here --></section>
+
+        </main>
+
+    </div>
+
+    <script>
+        // --- AUTHENTICATION LOGIC ---
+        const VALID_USERNAME = 'ultabeauty';
+        const VALID_PASSWORD = '6234bdre333';
+
+        /**
+         * Handles the login form submission.
+         */
+        function handleLogin(event) {
+            event.preventDefault();
+
+            const usernameInput = document.getElementById('username').value;
+            const passwordInput = document.getElementById('password').value;
+            const errorMessage = document.getElementById('login-error');
+
+            if (usernameInput === VALID_USERNAME && passwordInput === VALID_PASSWORD) {
+                // Success: Hide overlay and show content
+                document.getElementById('login-overlay').classList.add('hidden');
+                document.getElementById('main-content').classList.remove('hidden');
+                errorMessage.classList.add('hidden');
+
+                // Set session storage flag for basic persistence
+                sessionStorage.setItem('portal_authenticated', 'true');
+                
+                // Initialize the rest of the application
+                initializeApp();
+            } else {
+                // Failure: Display error message
+                errorMessage.textContent = 'Invalid username or password.';
+                errorMessage.classList.remove('hidden');
+            }
+        }
+
+        /**
+         * Checks the initial authentication state and sets up the form listener.
+         */
+        function checkAuthAndSetup() {
+            // Check if user is already authenticated (e.g., after a refresh)
+            if (sessionStorage.getItem('portal_authenticated') === 'true') {
+                document.getElementById('login-overlay').classList.add('hidden');
+                document.getElementById('main-content').classList.remove('hidden');
+                initializeApp();
+                return;
+            }
+            
+            // If not authenticated, attach the event listener to the login form
+            const loginForm = document.getElementById('login-form');
+            if (loginForm) {
+                loginForm.addEventListener('submit', handleLogin);
+            }
+        }
+
+        // --- CONTENT DEFINITION & APPLICATION LOGIC ---
+
+        const sections = [
+            { id: 'arch-overview', title: '1. Architecture Overview', subtitle: 'End-to-end data flow, system touchpoints, and security protocols.', content: `
+                <!-- System Diagram Text Overview --><h3 class="text-2xl font-semibold border-b border-gray-300 pb-2">Airship/Adobe Integration Overview</h3>
+                <div class="bg-gray-50 rounded-lg p-6 shadow-md border border-gray-200">
+                    <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                        <li><strong>Adobe → Airship:</strong> Adobe sends Events, Tags, Attributes, and Lists into Airship.</li>
+                        <li><strong>Airship Orchestration:</strong> Airship ingests this data to trigger and personalize cross-channel messaging.</li>
+                        <li><strong>Outbound Channels:</strong> Airship delivers targeted Email, Push, and SMS messages to Ulta’s customers.</li>
+                        <li><strong>Experiential Layer:</strong> Airship powers in-app and web embedded experiences, enabling real-time personalization.</li>
+                        <li><strong>Wallet Integration:</strong> Airship sends Pass updates to maintain synchronized loyalty and promotional content.</li>
+                        <li><strong>Outcome:</strong> Unified data flow between Adobe and Airship drives real-time, personalized engagement across Ulta’s digital ecosystem.</li>
+                    </ul>
+                </div>
+
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2 mt-8">Integration Touchpoints</h3>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><strong>Airship Inbound Segment API:</strong> Receives user segmentation data (Tags, Attributes) from AEP.</li>
+                    <li><strong>Airship Real-Time Data Stream (RTDS):</strong> Primary outbound event stream to AEP and Google Cloud Storage (GCS).</li>
+                    <li><strong>AEP Webhook Triggers:</strong> Event-based triggers (e.g., purchase events) from AEP initiating Airship Journeys.</li>
+                    <li><strong>Mobile SDKs:</strong> Direct connection for push token registration and In-App Message execution.</li>
+                </ul>
+
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2 mt-8">Authentication & Security </h3>
+                <p>Authentication between Airship and AEP is primarily handled via <strong>OAuth 2.0 Client Credential Flow</strong> for server-to-server communication, ensuring secure token exchange and limited scope access.</p>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><strong>Key Management:</strong> API keys for the Airship Tags/Attributes Destinations (AEP Inbound) are securely stored in Airship's Partner Integration configuration and must be rotated quarterly.</li>
+                    <li><strong>Data Governance:</strong> Airship adheres to Ulta's PII policies. Consent status and preference updates are maintained in Airship and mirrored back to AEP via RTDS to ensure a single source of truth for customer consent.</li>
+                </ul>
+                <h4 class="text-xl font-bold text-gray-900 border-t border-gray-300 pt-4 mt-8">Developer References</h4>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><a href="https://docs.airship.com/api/ua/#api-keys-and-authentication" target="_blank" class="text-blue-500 hover:text-blue-400">API Authentication and Keys Management</a></li>
+                    <li><a href="https://docs.airship.com/api/ua/#named-users" target="_blank" class="text-blue-500 hover:text-blue-400">Named Users API Reference</a></li>
+                    <li><a href="https://docs.airship.com/guides/messaging/audience/segmentation/tags/#tag-groups" target="_blank" class="text-blue-500 hover:text-blue-400">Airship Tag Groups Documentation</a></li>
+                    <li><a href="https://docs.airship.com/guides/messaging/real-time-data-streaming/" target="_blank" class="text-blue-500 hover:text-blue-400">Overview of Real-Time Data Streaming (RTDS)</a></li>
+                    <li><a href="https://storage.googleapis.com/airship-media-url/SETeam/mprice/Ulta/arch_diagram.jpg" target="_blank" class="text-blue-500 hover:text-blue-400">Integration Architecture Diagram (Visual)</a></li>
+                </ul>
+            `},
+            { id: 'aep-integration', title: '2. Adobe Experience Platform Integration', subtitle: 'Detailed configuration for data ingestion, outbound streams, and event-based triggers.', content: `
+                <!-- Content derived from browsing: https://docs.airship.com/integrations/adobe-experience-cloud/ --><h3 class="text-2xl font-semibold border-b border-gray-300 pb-2">Segmentation Data Ingestion (AEP → Airship)</h3>
+                <p>AEP uses <strong>Destination Integrations</strong> to send profile data (Tags and Attributes) to Airship. This requires a Named User strategy to map AEP profiles to Airship Channels.</p>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><strong>Mechanism:</strong> Airship Tags Destination and Airship Attributes Destination are configured within the AEP Real-Time Customer Data Platform (RTCDP).</li>
+                    <li><strong>Required Airship Configuration:</strong> A specific Tag Group, Attributes definition, and an Authentication Token must be generated in Airship's Partner Integrations settings and provided to AEP.</li>
+                    <li><strong>Example Tag Payload (Inbound API Call Mock)</strong>: This is the structure Airship receives from AEP for segment membership updates.</li>
+                </ul>
+
+                <div class="code-block p-4 rounded-lg mt-4 overflow-x-auto text-sm">
+                    <pre class="whitespace-pre-wrap"><code class="text-gray-900">{
+    "channel_id": "fe9930f4-5f80-4c31-97b7-56e2978f8b33",
+    "named_user_id": "UltaLoyalty_987654321",
+    "audience": {
+        "tags": {
+            "AEP_Segments": [
+                "Segment:HighValueBuyer_2024Q3",
+                "Segment:Email_OptIn",
+                "Segment:Store_Preference:NYC"
+            ]
+        },
+        "attributes": {
+            "lifetime_value": 1450.75,
+            "loyalty_tier": "Platinum"
+        }
+    }
+}</code></pre>
+                </div>
+
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2 mt-8">Data Stream Back to Adobe (Airship → AEP via RTDS)</h3>
+                <p>Airship uses its <strong>Real-Time Data Streaming (RTDS)</strong> service as a Source Integration for AEP. This data enriches the AEP profile with behavioral metrics.</p>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><strong>Configuration:</strong> Airship events (e.g., Push Opens, Message Sends, Uninstalls) are sent to a cloud storage bucket (GCS or S3).</li>
+                    <li><strong>AEP Mapping:</strong> Data is then mapped in AEP using the **Airship Event Mixin** schema, allowing the event data to join the unified customer profile.</li>
+                    <li><strong>Field Mapping Examples:</strong> Airship's <code>"event_type": "PUSH_OPEN"</code> maps directly to a custom Experience Event in AEP. The <code>"conversion_time"</code> and <code>"message_id"</code> are crucial fields for performance measurement.</li>
+                </ul>
+
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2 mt-8">Event-Based Triggers</h3>
+                <p>Adobe events can initiate Airship Journeys via webhooks. This is critical for real-time engagement following high-value actions (e.g., abandoned cart, loyalty tier upgrade).</p>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><strong>Mechanism:</strong> AEP triggers a webhook to a specific Airship Custom Event endpoint.</li>
+                    <li><strong>Mapping Logic:</strong> The incoming AEP payload must contain the Airship Named User ID and the relevant event data.</li>
+                    <li><strong>Example Webhook Payload (AEP Outbound Trigger Mock)</strong>:</li>
+                </ul>
+
+                <div class="code-block p-4 rounded-lg mt-4 overflow-x-auto text-sm">
+                    <pre class="whitespace-pre-wrap"><code class="text-gray-900">{
+    "name": "adobe_loyalty_upgrade",
+    "named_user_id": "UltaLoyalty_987654321",
+    "body": {
+        "new_tier": "Diamond",
+        "upgrade_date": "2024-10-15T10:00:00Z",
+        "promo_code": "DIAMOND20"
+    }
+}</code></pre>
+                </div>
+                
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2 mt-8">Error Handling & Retry Logic</h3>
+                <p>Adobe Experience Platform is configured with standard retry logic for outbound webhooks. Airship provides detailed logging in its **API Console** for all inbound calls. Failures related to authentication or invalid payloads are logged for investigation. Best practice involves setting up an **AEP-side queue** for failed Airship destination updates to allow for manual re-processing.</p>
+                <h4 class="text-xl font-bold text-gray-900 border-t border-gray-300 pt-4 mt-8">Developer References</h4>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><a href="https://docs.airship.com/integrations/adobe-experience-cloud/" target="_blank" class="text-blue-500 hover:text-blue-400">Airship Adobe Experience Cloud Overview & Setup</a></li>
+                    <li><a href="https://experienceleague.adobe.com/docs/experience-platform/rtcdp/destinations/destinations-cat/mobile-engagement-destinations/airship-attributes-destination.html" target="_blank" class="text-blue-500 hover:text-blue-400">AEP Real-Time CDP Destination Config (External Link)</a></li>
+                    <li><a href="https://docs.airship.com/api/ua/#attributes" target="_blank" class="text-blue-500 hover:text-blue-400">Attributes API for Profile Updates</a></li>
+                    <li><a href="https://docs.airship.com/guides/messaging/real-time-data-streaming/#destinations" target="_blank" class="text-blue-500 hover:text-blue-400">Configuring RTDS Destinations</a></li>
+                    <li><a href="https://docs.airship.com/guides/messaging/journeys/custom-events/" target="_blank" class="text-blue-500 hover:text-blue-400">Custom Events for Journey Triggers</a></li>
+                </ul>
+            `},
+            { id: 'gcp-integration', title: '3. Google Cloud Integration', subtitle: 'Exporting raw event data and combining data sets in BigQuery.', content: `
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2">Exporting Real-Time Data to GCS (Airship RTDS)</h3>
+                <p>Airship RTDS is configured with a Google Cloud Storage (GCS) destination to capture raw, user-level events for durable storage and consumption by Ulta's data lake/warehouse.</p>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><strong>File Formats:</strong> JSON (default) and Parquet (for optimized BigQuery ingestion).</li>
+                    <li><strong>Partitioning:</strong> Files are partitioned by event type and time (<code>/year/month/day/event_type/file.json</code>) to optimize query performance and cost.</li>
+                    <li><strong>Delivery Cadence:</strong> Files are delivered in near real-time, typically within 5-10 minutes of event occurrence.</li>
+                </ul>
+
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2 mt-8">BigQuery Pipeline Setup</h3>
+                <p>The GCS data feeds directly into BigQuery tables, where it is combined with AEP and other enterprise data sources for holistic analytics and modeling.</p>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><strong>Schema Examples:</strong> The main event table follows a standardized Airship schema, with a focus on <code>channel_id</code>, <code>named_user_id</code> (for joining to AEP profile), <code>event_type</code>, and <code>properties</code> (JSON object).</li>
+                    <li><strong>Data Joining:</strong> Joins between Airship (<code>airship_events</code>) and AEP (<code>aep_unified_profile</code>) tables are performed using the <code>named_user_id</code> as the primary key.</li>
+                </ul>
+
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2 mt-8">AI & Generative Features</h3>
+                <p>Leveraging Google's Gemini models for next-generation marketing content creation and Journey optimization.</p>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><strong>Gemini-Powered Content:</strong> Gemini API is integrated with Airship's content editor for rapid, personalized message copy generation (e.g., generating 5 variations of an SMS from a single prompt).</li>
+                    <li><strong>AI Journeys:</strong> Utilization of Airship's Predictive AI (e.g., Predicted to Churn, Optimal Send Time) for dynamic pathing within customer journeys.</li>
+                    <li><strong>API Access Requirements:</strong> Access requires a Google Cloud Service Account with <code>aiplatform.user</code> role and the Gemini API key securely managed by the Airship/Ulta integration layer.</li>
+                </ul>
+                <h4 class="text-xl font-bold text-gray-900 border-t border-gray-300 pt-4 mt-8">Developer References</h4>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><a href="https://docs.airship.com/integrations/gcs/" target="_blank" class="text-blue-500 hover:text-blue-400">GCS Destination Integration Setup Guide</a></li>
+                    <li><a href="https://docs.airship.com/guides/messaging/real-time-data-streaming/#schemas" target="_blank" class="text-blue-500 hover:text-blue-400">RTDS Event Schema Reference</a></li>
+                    <li><a href="https://cloud.google.com/bigquery/docs/loading-data-cloud-storage#json" target="_blank" class="text-blue-500 hover:text-blue-400">BigQuery Load JSON/Parquet from GCS (External Link)</a></li>
+                </ul>
+            `},
+            { id: 'mobile-messaging', title: '4. Mobile Messaging Infrastructure', subtitle: 'SDK setup, token management, and advanced mobile channel deployment.', content: `
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2">Push Notifications (iOS and Android SDK Setup) (<a href="https://docs.airship.com" target="_blank" class="text-blue-500 hover:text-blue-400">docs.airship.com</a>)</h3>
+                <p>Airship SDK is the core mechanism for managing push tokens and user identity on mobile devices.</p>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><strong>Token Registration:</strong> The SDK handles automatic push token (device token) registration with APNs/FCM and submission to Airship to create a **Channel ID**.</li>
+                    <li><strong>Channel ID Mapping:</strong> The Channel ID is associated with the **Named User ID** (Ulta Loyalty ID) using the <code>associateNamedUser</code> SDK call. This is crucial for cross-channel targeting.</li>
+                    <li><strong>Event Callbacks:</strong> Custom event callbacks are implemented in the app delegate to capture push received, opened, and button-tapped events, feeding them back to Airship for RTDS.</li>
+                </ul>
+
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2 mt-8">In-App Message Center</h3>
+                <p>The Message Center provides a persistent feed of targeted content within the Ulta mobile app.</p>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><strong>Rendering:</strong> Messages are rendered using Airship's native components for best performance. The Message Center payload includes HTML/CSS content for web views, but native components are prioritized.</li>
+                    <li><strong>Payload Structure:</strong> Payloads include the message ID, expiry date, title, subtitle, and an optional deep link or content URL. Lifecycle events (e.g., message read/delete) are automatically tracked by the SDK.</li>
+                </ul>
+
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2 mt-8">SMS & RCS</h3>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><strong>SMS Setup:</strong> Requires configuration of dedicated sender IDs and compliance with CTIA guidelines. All SMS opt-ins/opt-outs are synchronized with the Dynamic Preference Center.</li>
+                    <li><strong>RCS Templates:</strong> Rich Communication Services (RCS) are used for enhanced transactional messaging (e.g., order updates with carousels/rich media). Templates must be pre-approved by the carrier/Google.</li>
+                    <li><strong>API Endpoints:</strong> SMS/RCS messages are typically triggered via the Airship Channels API, often integrated into Airship Journeys.</li>
+                </ul>
+                <h4 class="text-xl font-bold text-gray-900 border-t border-gray-300 pt-4 mt-8">Developer References</h4>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><a href="https://docs.airship.com/platform/android/sdk-setup/" target="_blank" class="text-blue-500 hover:text-blue-400">Airship Android SDK Setup Guide</a></li>
+                    <li><a href="https://docs.airship.com/platform/ios/sdk-setup/" target="_blank" class="text-blue-500 hover:text-blue-400">Airship iOS SDK Setup Guide</a></li>
+                    <li><a href="https://docs.airship.com/guides/messaging/audience/segmentation/named-users/#association" target="_blank" class="text-blue-500 hover:text-blue-400">Channel ID and Named User Association</a></li>
+                    <li><a href="https://docs.airship.com/guides/messaging/message-center/" target="_blank" class="text-blue-500 hover:text-blue-400">Message Center Configuration</a></li>
+                    <li><a href="https://docs.airship.com/guides/channels/sms/get-started/" target="_blank" class="text-blue-500 hover:text-blue-400">SMS & RCS Channel Setup</a></li>
+                </ul>
+            `},
+            { id: 'preference-center', title: '5. Dynamic Preference Center', subtitle: 'Managing customer consent and real-time data synchronization.', content: `
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2">Architecture & Data Flow (<a href="https://docs.airship.com" target="_blank" class="text-blue-500 hover:text-blue-400">docs.airship.com</a>)</h3>
+                <p>The Preference Center acts as the front-end for Ulta's cross-channel consent management, utilizing Airship's Profile and Preference APIs.</p>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><strong>Update Flow:</strong> User changes preference → Ulta App/Web submits update to Airship's API → Airship applies update to Named User profile.</li>
+                    <li><strong>RTDS Reference:</strong> The Preference Change event is immediately routed to AEP and GCS via **RTDS** to maintain a unified consent profile across the enterprise.</li>
+                </ul>
+
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2 mt-8">Code Examples: Dynamic Rendering</h3>
+                <p>The Preference Center dynamically renders options based on a user's loyalty tier and seasonal product availability, leveraging Airship Attributes.</p>
+                <div class="code-block p-4 rounded-lg mt-4 overflow-x-auto text-sm">
+                    <pre class="whitespace-pre-wrap"><code class="text-gray-900">// Hypothetical JS/React snippet for rendering a seasonal recommendation preference
+if (user.attributes.get('seasonal_segment') === 'Holiday_Shopper') {
+    renderPreferenceToggle('Holiday_Gift_Ideas', 'Receive curated holiday product recommendations');
+}</code></pre>
+                </div>
+
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2 mt-8">Data Sync & Governance</h3>
+                <p>Real-time synchronization ensures consistency. All preference updates generate an auditable event containing the user ID, timestamp, preference key, and new value. This is critical for CCPA and GDPR compliance.</p>
+                <h4 class="text-xl font-bold text-gray-900 border-t border-gray-300 pt-4 mt-8">Developer References</h4>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><a href="https://docs.airship.com/guides/messaging/preference-center/" target="_blank" class="text-blue-500 hover:text-blue-400">Preference Center Overview</a></li>
+                    <li><a href="https://docs.airship.com/guides/messaging/real-time-data-streaming/#preferences-opt-in-and-opt-out" target="_blank" class="text-blue-500 hover:text-blue-400">RTDS: Preferences and Opt-Out Events</a></li>
+                    <li><a href="https://docs.airship.com/api/ua/#preference-api" target="_blank" class="text-blue-500 hover:text-blue-400">Airship Preference API Reference</a></li>
+                </ul>
+            `},
+            { id: 'in-app-experiences', title: '6. In-App Experiences', subtitle: 'Defining, deploying, and personalizing embedded content within the Ulta app.', content: `
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2">Scenes & Embedded Content (<a href="https://docs.airship.com" target="_blank" class="text-blue-500 hover:text-blue-400">docs.airship.com</a>)</h3>
+                <p>Airship Scenes are flexible, high-fidelity in-app experiences (e.g., onboarding flows, promotions, surveys) that are natively defined and deployed without app store updates.</p>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><strong>Deployment:</strong> Scenes are fetched by the Airship SDK on app start/resume and executed based on defined triggers (Screen view, Custom event).</li>
+                    <li><strong>Integration:</strong> Scenes can integrate with existing app components via deep links or custom JavaScript bridging to execute native functions.</li>
+                </ul>
+
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2 mt-8">Dynamic Content Rendering</h3>
+                <p>Personalization within Scenes uses the Handlebars templating language, leveraging real-time Named User Attributes.</p>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><strong>Personalization Logic:</strong> Use <code>{{user.attributes.first_name}}</code> for direct address. Use conditional logic (<code>{{#if user.tags.Silver_Tier}}</code>) for content variation.</li>
+                    <li><strong>Caching & Fallback:</strong> Scenes are cached locally for fast loading. Fallback content (default text if an attribute is missing) is mandatory (e.g., <code>{{user.attributes.first_name default="Beauty Lover"}}</code>).</li>
+                </ul>
+                <h4 class="text-xl font-bold text-gray-900 border-t border-gray-300 pt-4 mt-8">Developer References</h4>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><a href="https://docs.airship.com/guides/messaging/scenes/" target="_blank" class="text-blue-500 hover:text-blue-400">Airship Scenes Documentation</a></li>
+                    <li><a href="https://docs.airship.com/guides/messaging/in-app-automation/embedded/" target="_blank" class="text-blue-500 hover:text-blue-400">Embedded In-App Message Guide</a></li>
+                    <li><a href="https://docs.airship.com/guides/messaging/in-app-automation/scenes/#web-scenes" target="_blank" class="text-blue-500 hover:text-blue-400">Web Content in Scenes (Hybrid)</a></li>
+                </ul>
+            `},
+            { id: 'personalization', title: '7. Personalization & Segmentation', subtitle: 'Managing user identity, targeting logic, and dynamic content injection.', content: `
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2">Attribute Management (<a href="https://docs.airship.com" target="_blank" class="text-blue-500 hover:text-blue-400">docs.airship.com</a>)</h3>
+                <p>Attributes are key-value pairs assigned to the Named User, utilized for both segmentation and message personalization.</p>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><strong>Ingestion Strategies:</strong> Primarily ingested from AEP via the Attributes Destination (batch updates) or directly via the Airship Attributes API (real-time updates).</li>
+                    <li><strong>Key Attributes:</strong> <code>loyalty_tier</code>, <code>lifetime_purchase_value</code>, <code>last_store_visit_date</code>, and <code>preferred_brand</code> are defined and synchronized.</li>
+                </ul>
+
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2 mt-8">Event-Based Targeting</h3>
+                <p>Segmentation based on recent behavior is critical for re-engagement and timely messaging.</p>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><strong>Adobe Triggers:</strong> AEP events (e.g., Product View) initiate an Airship Custom Event, triggering an immediate message to the user.</li>
+                    <li><strong>Airship Events:</strong> Segment creation based on Airship event history (e.g., "Users who have not opened a push in 30 days").</li>
+                </ul>
+
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2 mt-8">Dynamic Templates</h3>
+                <p>Handlebars examples for advanced personalization.</p>
+                <div class="code-block p-4 rounded-lg mt-4 overflow-x-auto text-sm">
+                    <pre class="whitespace-pre-wrap"><code class="text-gray-900">// Personalized Coupon Block using conditional logic
+{{#if attributes.current_coupon}}
+    <p>Your special offer: {{attributes.current_coupon}} is waiting!</p>
+{{else}}
+    <p>Check out our latest arrivals!</p>
+{{/if}}</code></pre>
+                </div>
+
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2 mt-8">Performance Optimization</h3>
+                <p>Segment refresh frequency is set to **real-time** for high-priority segments (e.g., abandoned cart), utilizing Airship's immediate tag updates. Lower priority segments (e.g., monthly loyalty tiers) refresh daily. Caching layers are used to ensure rapid message delivery.</p>
+                <h4 class="text-xl font-bold text-gray-900 border-t border-gray-300 pt-4 mt-8">Developer References</h4>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><a href="https://docs.airship.com/guides/messaging/personalization/handlebars/" target="_blank" class="text-blue-500 hover:text-blue-400">Handlebars Templating for Personalization</a></li>
+                    <li><a href="https://docs.airship.com/guides/messaging/audience/segmentation/attributes/" target="_blank" class="text-blue-500 hover:text-blue-400">Audience Segmentation using Attributes</a></li>
+                    <li><a href="https://docs.airship.com/api/ua/#tags-api" target="_blank" class="text-blue-500 hover:text-blue-400">Tags API Reference</a></li>
+                </ul>
+            `},
+            { id: 'live-activities', title: '8. Live Activities & Persistent Engagement', subtitle: 'Integrating iOS Live Activities for real-time order tracking and updates.', content: `
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2">iOS Live Activities (<a href="https://docs.airship.com" target="_blank" class="text-blue-500 hover:text-blue-400">docs.airship.com</a>)</h3>
+                <p>Live Activities provide a dynamic, persistent notification on the lock screen and Dynamic Island, ideal for transactional updates like order status, curbside pickup progress, or loyalty point countdowns.</p>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><strong>API References:</strong> Airship provides a dedicated API endpoint to update Live Activities using a unique token (Activity ID) generated by the iOS SDK.</li>
+                    <li><strong>Integration with Adobe Triggers:</strong> An AEP event (e.g., <code>ORDER_SHIPPED</code>, <code>ORDER_READY_FOR_PICKUP</code>) triggers an Airship Journey. The Journey then makes an API call to the Live Activity update endpoint.</li>
+                    <li><strong>Lifecycle:</strong> Activities must be manually or programmatically ended (e.g., <code>ORDER_DELIVERED</code> event ends the activity).</li>
+                </ul>
+                
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2 mt-8">Example JSON Payloads (Live Activity Update)</h3>
+                <p>Payload used to update an active Live Activity session:</p>
+                <div class="code-block p-4 rounded-lg mt-4 overflow-x-auto text-sm">
+                    <pre class="whitespace-pre-wrap"><code class="text-gray-900">{
+    "activity_id": "aa1b22cc-33d4-44ee-55f6-66aa77b8c9d0",
+    "alert": {
+        "title": "Your Order Update",
+        "body": "Your order is ready for Curbside Pickup!"
+    },
+    "content": {
+        "status": "Ready for Pickup",
+        "eta": "5 mins",
+        "store_name": "Ulta Beauty 145"
+    },
+    "dismissal_date": "2024-10-15T20:00:00Z"
+}</code></pre>
+                </div>
+                <h4 class="text-xl font-bold text-gray-900 border-t border-gray-300 pt-4 mt-8">Developer References</h4>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><a href="https://docs.airship.com/guides/channels/push/live-activities/" target="_blank" class="text-blue-500 hover:text-blue-400">Live Activities Implementation Guide</a></li>
+                    <li><a href="https://docs.airship.com/api/ua/#live-activities" target="_blank" class="text-blue-500 hover:text-blue-400">Live Activities API Reference</a></li>
+                </ul>
+            `},
+            { id: 'monitoring', title: '10. Monitoring, Analytics & Optimization', subtitle: 'Data pipeline health, performance measurement, and troubleshooting.', content: `
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2">Airship Real-Time Data Stream Dashboard (<a href="https://docs.airship.com" target="_blank" class="text-blue-500 hover:text-blue-400">docs.airship.com</a>)</h3>
+                <p>The RTDS Dashboard provides critical visibility into the health of all outbound data streams (AEP, GCS, etc.).</p>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><strong>Key Metrics:</strong> Monitor **Event Throughput** (events/sec), **Latency** (time to destination), and **Error Rates** (failed deliveries). A sustained error rate > 0.5% warrants investigation.</li>
+                    <li><strong>Troubleshooting:</strong> Error logs detail destination endpoint failures, often related to API key expiry or network connectivity.</li>
+                </ul>
+
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2 mt-8">Adobe & BigQuery Analytics Integration</h3>
+                <p>Measurement focuses on downstream business impact, leveraging the unified data in BigQuery and AEP.</p>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><strong>Core Dashboards:</strong> Building dashboards that track conversion lift from push opens (using the Airship <code>message_id</code> in the join), loyalty tier movement, and revenue generated per Airship Journey.</li>
+                    <li><strong>Optimization:</strong> Use A/B testing and experimentation features to continually optimize message content, timing (OST), and channel preference.</li>
+                </ul>
+                <h4 class="text-xl font-bold text-gray-900 border-t border-gray-300 pt-4 mt-8">Developer References</h4>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><a href="https://docs.airship.com/guides/messaging/real-time-data-streaming/#metrics-and-monitoring" target="_blank" class="text-blue-500 hover:text-blue-400">RTDS Monitoring Metrics</a></li>
+                    <li><a href="https://docs.airship.com/guides/messaging/analytics/" target="_blank" class="text-blue-500 hover:text-blue-400">Analytics and Performance Overview</a></li>
+                    <li><a href="https://docs.airship.com/api/ua/#airship-event-schema" target="_blank" class="text-blue-500 hover:text-blue-400">Full Airship Event Schema Reference</a></li>
+                </ul>
+            `},
+            { id: 'dev-resources', title: '11. Environment Setup & Developer Resources', subtitle: 'Configuration standards, testing, and sample code access.', content: `
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2">Sandbox vs. Production (<a href="https://docs.airship.com" target="_blank" class="text-blue-500 hover:text-blue-400">docs.airship.com</a>)</h3>
+                <p>Airship uses the same Named User association method for both sandbox and production environments, but with separate API keys and project IDs.</p>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><strong>Environments:</strong> Separate Airship projects are maintained for Sandbox, Staging, and Production.</li>
+                    <li><strong>Data Routing:</strong> Dedicated API keys and RTDS configurations ensure that Sandbox data flows only to the Staging AEP/GCS environments.</li>
+                    <li><strong>Mobile Apps:</strong> Ulta mobile apps must use separate bundle/application IDs to cleanly separate the Airship Production and Development SDK credentials.</li>
+                </ul>
+
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2 mt-8">Testing Framework</h3>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><strong>SDK Logs:</strong> Developers should enable verbose Airship SDK logging during testing to diagnose token registration and Named User association issues.</li>
+                </ul>
+
+                <h3 class="text-2xl font-semibold border-b border-gray-300 pb-2 mt-8">Sample Code Repositories</h3>
+                <p>Internal Ulta GitHub repositories contain canonical code samples for the Airship integration. <strong>Note:</strong> Refer to these internal links for the most up-to-date implementation snippets.</p>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><strong>iOS/Android:</strong> <code>UltaApp/Airship-SDK-Integration</code> (Covers token management and Scene/Message Center setup).</li>
+                    <li><strong>Backend Services:</strong> <code>UltaPlatform/Airship-API-Gateway</code> (Python microservice for custom event and bulk attribute updates).</li>
+                </ul>
+                <h4 class="text-xl font-bold text-gray-900 border-t border-gray-300 pt-4 mt-8">Developer References</h4>
+                <ul class="list-disc ml-6 space-y-2 text-gray-700">
+                    <li><a href="https://docs.airship.com/guides/getting-started/project-setup/#environments" target="_blank" class="text-blue-500 hover:text-blue-400">Environment Setup and Project IDs</a></li>
+                    <li><a href="https://docs.airship.com/api/ua/#api-keys-and-authentication" target="_blank" class="text-blue-500 hover:text-blue-400">API Keys and Authentication Guide</a></li>
+                    <li><a href="https://docs.airship.com/guides/messaging/web/sdk-setup/" target="_blank" class="text-blue-500 hover:text-blue-400">Web SDK Setup (for Hybrid Apps)</a></li>
+                    <li><a href="https://docs.airship.com/platform/ios/troubleshoot/" target="_blank" class="text-blue-500 hover:text-blue-400">iOS Troubleshooting and SDK Logging</a></li>
+                </ul>
+            `},
+        ];
+
+        // JavaScript for Navigation and Content Management
+        const navList = document.getElementById('nav-list');
+        const contentContainer = document.getElementById('content');
+        const sectionTitle = document.getElementById('section-title');
+        const sectionSubtitle = document.getElementById('section-subtitle');
+
+        /**
+         * Renders the navigation menu and attaches click handlers.
+         */
+        function renderNav() {
+            sections.forEach(section => {
+                const link = document.createElement('a');
+                link.href = `#${section.id}`;
+                link.className = 'section-link block p-3 text-gray-600 transition duration-150 ease-in-out';
+                link.textContent = section.title;
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    history.pushState(null, '', link.href); // Update URL hash
+                    loadContent(section.id);
+                });
+                navList.appendChild(link);
+            });
+        }
+
+        /**
+         * Loads and displays the content for the specified section ID.
+         * @param {string} id The section ID to load.
+         */
+        function loadContent(id) {
+            const sectionData = sections.find(s => s.id === id);
+
+            if (!sectionData) {
+                // Default error state
+                sectionTitle.textContent = '404';
+                sectionSubtitle.textContent = 'Section not found.';
+                contentContainer.innerHTML = '<p class="text-red-600">The requested documentation section could not be loaded.</p>';
+                return;
+            }
+
+            // Update Header
+            sectionTitle.textContent = sectionData.title;
+            sectionSubtitle.textContent = sectionData.subtitle;
+
+            // Update Content
+            contentContainer.innerHTML = sectionData.content;
+            
+            // Update Active Link State
+            document.querySelectorAll('.section-link').forEach(link => {
+                link.classList.remove('active-link');
+                link.classList.remove('text-white');
+                link.classList.add('text-gray-600');
+            });
+            const activeLink = document.querySelector(`[href="#${id}"]`);
+            activeLink.classList.add('active-link');
+            activeLink.classList.remove('text-gray-600');
+            activeLink.classList.add('text-white');
+            
+            // Scroll to top of content area on navigation
+            document.getElementById('content-container').scrollTop = 0;
+        }
+
+        /**
+         * Initializes the application (runs ONLY after successful authentication).
+         */
+        function initializeApp() {
+            renderNav();
+            
+            // Check URL hash to load content, otherwise load the first section
+            const initialHash = window.location.hash.substring(1) || sections[0].id;
+            loadContent(initialHash);
+            
+            // Handle browser back/forward buttons
+            window.onhashchange = () => {
+                const hash = window.location.hash.substring(1);
+                if (hash) {
+                    loadContent(hash);
+                }
+            };
+        }
+
+        // Initialize App: Checks authentication first
+        window.onload = function() {
+            checkAuthAndSetup();
+        }
+    </script>
+</body>
+</html>
